@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Router Playground</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background:#0b1020; color:#eef2ff; }
+    .wrap { display:grid; grid-template-columns: 360px 1fr; gap: 24px; padding: 24px; }
+    .card { background:#111731; border:1px solid #1b2350; border-radius:16px; padding:16px; box-shadow:0 8px 24px rgba(0,0,0,.25); }
+    h1 { font-size:18px; margin:0 0 8px 0; color:#c7d2fe; }
+    textarea { width:100%; height:180px; padding:12px; border-radius:12px; border:1px solid #27306a; background:#0f1533; color:#e5e7eb; resize:vertical; }
+    select, button { height:40px; border-radius:10px; border:1px solid #27306a; background:#0f1533; color:#e5e7eb; padding:0 12px; }
+    button { background:#6246ea; border-color:#6246ea; font-weight:600; cursor:pointer; }
+    button:disabled { opacity:.6; cursor:not-allowed; }
+    .row { display:flex; gap:8px; align-items:center; margin-top:12px; }
+    .pill { font-size:12px; padding:4px 8px; background:#1e293b; border:1px solid #334155; border-radius:999px; display:inline-block; }
+    pre { white-space:pre-wrap; word-wrap:break-word; }
+    .lane { font-weight:700; color:#a5b4fc; }
+    ul { margin:8px 0 0 16px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Request Console (Playground)</h1>
+      <label class="pill">Prompt Editor</label>
+      <textarea id="prompt-editor" placeholder="Type your prompt here...">Prime Minister of India</textarea>
+      <div class="row">
+        <label for="lane-selector">Lane:</label>
+        <select id="lane-selector">
+          <option>Auto (Default)</option>
+          <option>Fast</option>
+          <option>Balanced</option>
+          <option>Deep</option>
+        </select>
+        <button id="run-btn">Run ⏎</button>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <button id="intent-btn">Intent Analyzer</button>
+        <span class="pill">Intent: <span id="analyzer-intent">Q&A</span></span>
+        <span class="pill">Difficulty: <span id="analyzer-difficulty">Low</span></span>
+        <span class="pill">Min Lane: <span id="analyzer-min-lane">Fast</span></span>
+      </div>
+    </div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="pill">Chosen Model: <span id="model-chip">—</span></div>
+        <div class="pill">Backend: http://localhost:8080</div>
+      </div>
+      <div id="routing-message" style="margin-top:12px;"><em>Click Run to invoke the three lanes (fast, balanced, deep).</em></div>
+    </div>
+  </div>
+<script>
+function escapeHtml(s){return String(s||'').replace(/[&<>\"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+async function runPrompt(){
+  const prompt=(document.getElementById('prompt-editor')?.value||'').trim();
+  const laneSel=document.getElementById('lane-selector')?.value||'Auto (Default)';
+  const out=document.getElementById('routing-message');
+  const btn=document.getElementById('run-btn');
+  if(!prompt){ out.textContent='Please enter a prompt.'; return; }
+  const analyzerIntent=document.getElementById('analyzer-intent')?.textContent||null;
+  const analyzerDifficulty=document.getElementById('analyzer-difficulty')?.textContent||null;
+  const analyzerMinLane=document.getElementById('analyzer-min-lane')?.textContent||null;
+  btn.disabled=true; out.innerHTML='<span class="pill">Running…</span>';
+  try{
+    const res=await fetch('http://localhost:8080/api/route',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({prompt, lane_selector: laneSel, analyzer_intent: analyzerIntent, analyzer_difficulty: analyzerDifficulty, analyzer_min_lane: analyzerMinLane})
+    });
+    if(!res.ok) throw new Error(await res.text());
+    const data=await res.json();
+    const chosen=data.chosen_lane; const cr=data.results[chosen];
+    document.getElementById('model-chip').textContent=`${cr.model_id} • ${chosen.toUpperCase()}`;
+    out.innerHTML=`<div><span class="lane">Chosen Lane:</span> ${chosen.toUpperCase()} — ${cr.latency_ms} ms</div>
+      <pre>${escapeHtml(cr.text)}</pre><hr /><div>All lanes:</div><ul>${
+        ['fast','balanced','deep'].map(l=>{const r=data.results[l]; const err=r.error?` <span style='color:#fca5a5'>(error: ${escapeHtml(r.error)})</span>`:''; 
+          return `<li><b>${l.toUpperCase()}</b> — ${escapeHtml(r.model_id)} — ${r.latency_ms} ms${err}<pre>${escapeHtml(r.text).slice(0,800)}</pre></li>`;}).join('')
+      }</ul>`;
+  }catch(e){ out.innerHTML=`<span style="color:#fca5a5">Backend error: ${escapeHtml(e.message||e)}</span>`; }
+  finally{ btn.disabled=false; }
+}
+document.getElementById('run-btn').addEventListener('click', runPrompt);
+document.getElementById('intent-btn').addEventListener('click', ()=>{
+  const el=document.getElementById('analyzer-difficulty'); el.textContent=(el.textContent==='Low')?'High':'Low';
+});
+</script>
+</body></html>
